@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: This template CloudFront for BackOffice-Using.
+             Deploy at us-east-1 Region
+
+Parameters:
+  MaintenanceMode:
+    Description: Use maintenance mode to activate Basic Authorization
+    Type: String
+    AllowedValues:
+      - true
+      - false
+
+  MaintenanceLambdaVersion:
+    Description: The Lambda function version of basic auth
+    Type: Number
+
+Conditions:
+  isMaintenanceMode: !Equals [ !Ref MaintenanceMode, 'true' ]
+
+Mappings:
+  Env:
+    Name:
+      '390855516651': Dev
+      '646121128682': Stg
+      '185157724665': Pre
+      '385622726732': Prod
+  Dev:
+    BaseHost:
+      Name: dev--ticketsystem.pia.jp
+    BucketPrefix:
+      Name: 48d3982477e9a9f95ff2
+  Stg:
+    BaseHost:
+      Name: stg--ticketsystem.pia.jp
+    BucketPrefix:
+      Name: 3b39231334fc81b16d2a
+  Pre:
+    BaseHost:
+      Name: pre--ticketsystem.pia.jp
+    BucketPrefix:
+      Name: 3619af44287dc0777aa9
+  Prod:
+    BaseHost:
+      Name: ticketsystem.pia.jp
+    BucketPrefix:
+      Name: eb39445bca9f6181f12e
+  Cloudfront:
+    HostedZone:
+      ID: Z2FDTNDATAQYW2
+
+Resources:
+# ------------------------------------------------------------#
+# Cloudfront
+# ------------------------------------------------------------#
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        PriceClass: PriceClass_All
+        WebACLId: # TODO update once WAF Available
+          # For WAF V2 need to set arn instead of id
+          Fn::ImportValue: !Sub
+            - ${EnvName}-Front-BO-WebACL-Arn
+            - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+        Logging:
+          Bucket: !Sub
+              - ${BucketPrefix}-cloudfront-accesslogs-s3.s3.amazonaws.com
+              - BucketPrefix:
+                  Fn::FindInMap:
+                    - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+                    - BucketPrefix
+                    - Name
+          Prefix: !Sub
+            - ${EnvName}-FrontFrontSiteWebACL/
+            - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+        Aliases:
+          - !Sub
+              - bo.${BaseHostName}
+              - BaseHostName:
+                  Fn::FindInMap:
+                    - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+                    - BaseHost
+                    - Name
+          - !Sub
+              - idp.${BaseHostName}
+              - BaseHostName:
+                  Fn::FindInMap:
+                    - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+                    - BaseHost
+                    - Name
+        Origins:
+          - CustomOriginConfig:
+              OriginKeepaliveTimeout: 5
+              OriginReadTimeout: 30
+              OriginSSLProtocols:
+                - TLSv1.2
+              OriginProtocolPolicy: https-only
+              HTTPPort: 80
+              HTTPSPort: 443
+            DomainName: !Sub
+              - bo-ga.${BaseHostName}
+              - BaseHostName:
+                  Fn::FindInMap:
+                    - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+                    - BaseHost
+                    - Name
+            Id: !Sub
+              - ${EnvName}-BO-GA
+              - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+            OriginCustomHeaders:
+              - HeaderName: x-cf-restriction-from
+                HeaderValue: !Sub
+                  - '{{resolve:secretsmanager:${EnvName}-Front-BO-ALB-Custom-Header-Secret}}'
+                  - EnvName: !FindInMap [ Env, Name, !Ref 'AWS::AccountId' ]
+        DefaultCacheBehavior:
+          LambdaFunctionAssociations:
+            Fn::If:
+              - isMaintenanceMode
+              - - EventType: viewer-request
+                  LambdaFunctionARN: !Sub
+                    - arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${EnvName}-Front-BO-Basic-Auth-Function:${MaintenanceLambdaVersion}
+                    - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+              - !Ref 'AWS::NoValue'
+          TargetOriginId: !Sub
+            - ${EnvName}-BO-GA
+            - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          DefaultTTL: 0
+          MaxTTL: 0
+          MinTTL: 0
+          Compress: false
+          SmoothStreaming: false
+          ForwardedValues:
+            Cookies:
+              Forward: all
+            Headers:
+              - Accept
+              - Accept-Language
+              - Accept-Charset
+              - Accept-Datetime
+              - Accept-Encoding
+              - Host
+              - Origin
+              - Referer
+              - Authorization
+            QueryString: true
+        ViewerCertificate:
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2019
+          AcmCertificateArn:
+            Fn::ImportValue: !Sub
+              - ${EnvName}-Global-Wildcard-Certification
+              - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+        HttpVersion: http2
+        IPV6Enabled: false
+        Enabled: true
+#        Logging:
+#          Bucket: !Sub ${EnvName}.${S3Bucket}.s3.amazonaws.com
+#          Prefix: !Sub logs/cloudfront/${DomainName}/
+#          IncludeCookies: false
+      Tags:
+        - Key: Name
+          Value: !Sub
+            - ${EnvName}-Front-BO-Cloudfront
+            - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+        - Key: StackName
+          Value: !Sub ${AWS::StackName}
+# ------------------------------------------------------------#
+# DNS Record
+# ------------------------------------------------------------#
+  CloudfrontDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Sub
+        - ${BaseHostName}.
+        - BaseHostName:
+            Fn::FindInMap:
+              - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+              - BaseHost
+              - Name
+      Comment: !Sub
+        - DNS name for bo.{BaseHostName}.
+        - BaseHostName:
+            Fn::FindInMap:
+              - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+              - BaseHost
+              - Name
+      Name: !Sub
+        - bo.${BaseHostName}.
+        - BaseHostName:
+            Fn::FindInMap:
+              - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+              - BaseHost
+              - Name
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: !FindInMap [Cloudfront, HostedZone, ID]
+
+  IdpDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Sub
+        - ${BaseHostName}.
+        - BaseHostName:
+            Fn::FindInMap:
+              - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+              - BaseHost
+              - Name
+      Comment: !Sub
+        - DNS name for idp.{BaseHostName}.
+        - BaseHostName:
+            Fn::FindInMap:
+              - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+              - BaseHost
+              - Name
+      Name: !Sub
+        - idp.${BaseHostName}.
+        - BaseHostName:
+            Fn::FindInMap:
+              - !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+              - BaseHost
+              - Name
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: !FindInMap [Cloudfront, HostedZone, ID]

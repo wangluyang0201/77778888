@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: This template creates WebACL for FrontSite-Using. Deploy at us-east-1 Region
+
+Parameters:
+  PublicMode:
+    Description: Fully open to pulic
+    Type: String
+    Default: OFF
+    AllowedValues:
+      - ON
+      - OFF
+
+Conditions:
+  isPublicMode: !Equals [ !Ref PublicMode, 'ON' ]
+
+Mappings:
+  Env:
+    Name:
+      '390855516651': Dev
+      '646121128682': Stg
+      '185157724665': Pre
+      '385622726732': Prod
+# The EIP of NAT, created in ap-northeast-1 Region
+  Prod:
+    IPWhiteList:
+      ALBAssociatedEip1: 52.193.0.186/32
+      ALBAssociatedEip2: 18.177.239.38/32
+  Stg:
+    IPWhiteList:
+      ALBAssociatedEip1: 18.178.37.162/32
+      ALBAssociatedEip2: 54.250.89.211/32
+  Pre:
+    IPWhiteList:
+      ALBAssociatedEip1: 18.181.148.193/32
+      ALBAssociatedEip2: 52.196.134.248/32
+  Dev:
+    IPWhiteList:
+      ALBAssociatedEip1: 18.180.219.134/32
+      ALBAssociatedEip2: 176.34.38.84/32
+
+Resources:
+# ------------------------------------------------------------#
+# Global Waf
+# ------------------------------------------------------------#
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    DeletionPolicy: Retain
+    Properties:
+      Name: !Sub
+        - ${EnvName}FrontFrontSiteWebACL
+        - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+      DefaultAction:
+        Fn::If:
+          - isPublicMode
+          - Allow: {}
+          - Block: {}
+      Scope: CLOUDFRONT
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub
+          - ${EnvName}FrontFrontSiteWebACL
+          - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+        SampledRequestsEnabled: false
+      Rules:
+        -
+          Action:
+            Allow: {}
+          Name: Custom-IPaddress-WhiteList
+          Priority: 0
+          Statement:
+            IPSetReferenceStatement:
+              Arn: !GetAtt IPWhiteList.Arn
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: Custom-IPaddress-WhiteList
+            SampledRequestsEnabled: false
+
+  IPWhiteList:
+    Type: AWS::WAFv2::IPSet
+    DeletionPolicy: Retain
+    Properties:
+      Name: FrontSiteWhiteListIPSet
+      Scope: CLOUDFRONT
+      IPAddressVersion: IPV4
+      Addresses:
+        - 210.138.50.4/30
+        - 210.138.50.8/30
+        - 202.232.30.0/24
+        - 202.32.249.128/29
+        - 202.232.29.0/24
+        - 210.149.23.11/32
+
+Outputs:
+  GlobalWebACL:
+    Description: Global webacl
+    Value: !GetAtt WebACL.Arn
+    Export:
+      Name: !Sub
+        - ${EnvName}-Front-FS-WebACL-Arn
+        - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']

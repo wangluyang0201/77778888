@@ -1,0 +1,281 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  This template deploys a APIGW-CampaignSite for each env.
+
+  ATTENTION
+    - Deployment Need To Do Manually!!!
+Parameters:
+  StageName:
+    Description: The Stage version for API Gateway
+    Type: String
+    Default: v1
+
+Mappings:
+  Env:
+    Name:
+      '312345678901': Dev
+      '612345678902': Stg
+      '112345678905': Pre
+      '412345678902': Prod
+  ApiPolicy:
+    SourceIP:
+      '312345678901':
+        - 210.138.50.4/30
+        - 210.138.50.8/30
+        - 202.32.249.128/29
+        - 202.232.29.0/24
+        - 202.232.30.0/24
+        - 210.149.23.11/32
+      '612345678902':
+        - 210.138.50.4/30
+        - 210.138.50.8/30
+        - 202.32.249.128/29
+        - 202.232.29.0/24
+        - 202.232.30.0/24
+        - 210.149.23.11/32
+      '112345678905':
+        - 210.138.50.4/30
+        - 210.138.50.8/30
+        - 202.32.249.128/29
+        - 202.232.29.0/24
+        - 202.232.30.0/24
+        - 210.149.23.11/32
+      '412345678902':
+        - 210.138.50.4/30
+        - 210.138.50.8/30
+        - 202.32.249.128/29
+        - 202.232.29.0/24
+        - 202.232.30.0/24
+        - 210.149.23.11/32
+        - 54.95.148.176/32
+        - 54.248.224.232/32
+        - 54.249.138.225/32
+        - 54.150.193.99/32
+  path:
+    pattern:
+      SeasonSeat: seasonseat
+      Invitation: invitation
+      Common: common
+  Dev:
+    BaseHost:
+      Name: dev-ticketsystem.pia.jp
+    HostedZone:
+      ID: Z078436061ZHJ8X2ADJF
+  Stg:
+    BaseHost:
+      Name: stg-ticketsystem.pia.jp
+    HostedZone:
+      ID: Z02957363GGJSJ98WMYZ4
+  Pre:
+    BaseHost:
+      Name: pre-ticketsystem.pia.jp
+    HostedZone:
+      ID: Z03990552Y4KKWKAVH3XE
+  Prod:
+    BaseHost:
+      Name: ticketsystem.pia.jp
+    HostedZone:
+      ID: Z0640870N7PNFQVVKZF7
+
+Resources:
+  Api:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Description: !Sub
+        - ${EnvName}-Api-CampaignSite
+        - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+      Name: !Sub
+        - ${EnvName}-Api-CampaignSite
+        - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      FailOnWarnings: true
+      Policy :
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: execute-api:Invoke
+            Resource: arn:aws:execute-api:*
+          - Effect: Deny
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: execute-api:Invoke
+            Resource: arn:aws:execute-api:*
+            Condition:
+              NotIpAddress:
+                aws:SourceIp:
+                   !FindInMap [ ApiPolicy, SourceIP, !Ref 'AWS::AccountId' ]
+
+# ------------------------------------------------------------#
+# Common API Config
+# ------------------------------------------------------------#
+  CommonResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: !FindInMap [path, pattern, Invitation]
+
+  CampaignSiteResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !Ref CommonResource
+      PathPart: campaign-site
+
+  TestResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !Ref CampaignSiteResource
+      PathPart: mock
+
+  EntranceGateMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref TestResource
+      AuthorizationType: AWS_IAM
+      HttpMethod: POST
+      Integration:
+        Type: MOCK
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: NEVER
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - ResponseTemplates:
+              application/json: |
+                {
+                  "message": "This is a MOCK!"
+                }
+            StatusCode: '200'
+      MethodResponses:
+        - ResponseModels:
+            application/json: Empty
+          StatusCode: '200'
+
+
+# ------------------------------------------------------------#
+# Policy
+# ------------------------------------------------------------#
+  ApiEntranceGatePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub
+        - ${EnvName}-Front-Api-CampaignSite-Policy
+        - EnvName: !FindInMap [ Env, Name, !Ref 'AWS::AccountId' ]
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Resource: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*
+            Effect: Allow
+            Action: execute-api:Invoke
+
+# ------------------------------------------------------------#
+# Deployment
+# ------------------------------------------------------------#
+  Deployment:
+    DependsOn: EntranceGateMethod
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      Description: !Sub
+        - ${EnvName}-Api-CampaignSite
+        - EnvName: !FindInMap [ Env, Name, !Ref 'AWS::AccountId' ]
+      RestApiId: !Ref Api
+      StageName: !Ref StageName
+      StageDescription:
+        DataTraceEnabled: true
+        LoggingLevel: INFO
+        MethodSettings:
+        - LoggingLevel: INFO
+          ResourcePath: /*
+          HttpMethod: '*'
+
+# ------------------------------------------------------------#
+# WAFv2
+# ------------------------------------------------------------#
+  APIGWWAF:
+    Type: AWS::WAFv2::WebACLAssociation
+    DependsOn: Deployment
+    Properties:
+      ResourceArn: !Sub
+        - arn:aws:apigateway:${AWS::Region}::/restapis/${ApiID}/stages/${StageName}
+        - ApiID: !Ref Api
+      WebACLArn:
+        Fn::ImportValue: !Sub
+         - ${EnvName}-Api-APIGW-WebACL-Arn
+         - EnvName: !FindInMap [ Env, Name, !Ref 'AWS::AccountId' ]
+
+# ------------------------------------------------------------#
+# CustomDomain
+# ------------------------------------------------------------#
+  ApiGatewayCustomDomainName:
+    Type: "AWS::ApiGateway::DomainName"
+    Properties:
+      RegionalCertificateArn:
+        Fn::ImportValue: !Sub
+          - ${EnvName}-Wildcard-Certification
+          - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      SecurityPolicy: TLS_1_2
+      DomainName:
+        !Sub
+        - campaign-site-api.${ExternalRoute53BaseDomain}
+        - ExternalRoute53BaseDomain:
+            Fn::FindInMap:
+              - !FindInMap [ Env, Name, !Ref 'AWS::AccountId' ]
+              - BaseHost
+              - Name
+      Tags:
+        - Key: Name
+          Value: !Sub
+            - ${EnvName}-Front-Api-CampaignSite-CustomDomain
+            - EnvName: !FindInMap [Env, Name, !Ref 'AWS::AccountId']
+        - Key: StackName
+          Value: !Sub ${AWS::StackName}
+
+  BasePathMapping:
+    Type: "AWS::ApiGateway::BasePathMapping"
+    DependsOn: Deployment
+    Properties:
+      DomainName:
+        !Sub
+        - campaign-site-api.${ExternalRoute53BaseDomain}
+        - ExternalRoute53BaseDomain:
+            Fn::FindInMap:
+              - !FindInMap [ Env, Name, !Ref 'AWS::AccountId' ]
+              - BaseHost
+              - Name
+      RestApiId: !Ref Api
+      Stage: !Ref StageName
+
+  CustomDomainRecord:
+    Type: "AWS::Route53::RecordSet"
+    Properties:
+      Name:
+        !Sub
+        - campaign-site-api.${ExternalRoute53BaseDomain}
+        - ExternalRoute53BaseDomain:
+            Fn::FindInMap:
+              - !FindInMap [ Env, Name, !Ref 'AWS::AccountId' ]
+              - BaseHost
+              - Name
+      Type: A
+      HostedZoneId:
+        Fn::FindInMap:
+          - !FindInMap [ Env, Name, !Ref 'AWS::AccountId' ]
+          - HostedZone
+          - ID
+      AliasTarget:
+        DNSName: !GetAtt ApiGatewayCustomDomainName.RegionalDomainName
+        HostedZoneId: !GetAtt ApiGatewayCustomDomainName.RegionalHostedZoneId
