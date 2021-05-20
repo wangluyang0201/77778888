@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: "example"
+
+Parameters:
+  ServiceName:
+    Description: The Service Name
+    Type: String
+  
+Resources:
+  MyCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        WebACLId: !Ref MyWebACL #紐付けはここで行う
+        Enabled: true
+        Origins:
+          # API Gatewayをオリジンにする
+          - Id: "ApiGatewayOrigin"
+            DomainName: "xxxxx.execute-api.ap-northeast-1.amazonaws.com"  # API Gatewayのドメイン名
+            OriginPath: "/v1"  # ステージ名 (ここではv1) をAPIのURLに含めたくない場合は指定する
+            CustomOriginConfig:
+              OriginProtocolPolicy: "https-only"
+        Aliases:
+          # APIのドメイン名
+          - "api.example.com"
+        ViewerCertificate:
+          # 証明書はバージニア北部 (us-east-1) リージョンのものしか使用できないので注意
+          AcmCertificateArn: "arn:aws:acm:us-east-1:999999999999:certificate/99999999-9999-9999-9999-999999999999"
+          MinimumProtocolVersion: "TLSv1.1_2016"
+          SslSupportMethod: "sni-only"
+        DefaultCacheBehavior:
+          TargetOriginId: "ApiGatewayOrigin"
+          ViewerProtocolPolicy: "redirect-to-https"
+          ForwardedValues:
+            # クエリストリングをフォワードさせる。GETのAPIがある場合は必ずtrueにする
+            QueryString: true
+          AllowedMethods:
+            # リストで指定してるけど実際に可能な組み合わせは3通りしかない (公式マニュアル参照)
+            # POSTを利用したければ、実際には使わなかろうと以下全て指定する必要あり
+            - "GET"
+            - "HEAD"
+            - "OPTIONS"
+            - "PUT"
+            - "PATCH"
+            - "POST"
+            - "DELETE"
+          # キャッシュを無効化する (しないとGETの戻りがキャッシュされる)
+          DefaultTTL: 0
+          MaxTTL: 0
+          MinTTL: 0
+        IPV6Enabled: true
+        Comment: "API Gatewayの前に置くCloudFront"
+        Logging:
+          # S3バケットにアクセスログを保存
+          Bucket: "xxxxx.s3.amazonaws.com"  # バケットのドメイン名
+          Prefix: "cf"  # 設定すると、このフォルダ以下にログを保存する
+      Tags:
+        - Key: "Service"
+          Value: !Ref ServiceName

@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create RDSinstance
+Parameters:
+  PJPrefix:
+    Default: "test"
+    Type: String
+    
+  DBInstanceID:
+    Default: mydbinstance1
+    Description: My database instance
+    Type: String
+    ConstraintDescription: >-
+      Must begin with a letter and must not end with a hyphen or contain two
+      consecutive hyphens.
+  
+  DBName:
+    Default: mydb
+    Description: My database
+    Type: String
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+  
+  DBInstanceClass:
+    Default: db.t2.micro
+    Description: DB instance class
+    Type: String
+    ConstraintDescription: Must select a valid DB instance type.
+  
+  DBAllocatedStorage:
+    Default: '20'
+    Description: The size of the database (GiB)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 20 and 65536 GiB.
+  
+  DBUsername:
+    Default: Admin
+    Description: Username for MySQL database access
+    Type: String
+  
+  DBPassword:
+    NoEcho: 'true'
+    Default: password
+    Description: Password MySQL database access
+    Type: String
+
+  MultiAZ:
+    Default: "false"
+    Description: MultiAZ
+    Type: String
+
+Resources:
+# ------------------------------------------------------------#
+#  DBSubnetGroup
+# ------------------------------------------------------------#
+  RDSSubnetgroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription:  "-"
+      DBSubnetGroupName: RDSSubnetgroup
+      SubnetIds:
+        - Fn::ImportValue: !Sub "${PJPrefix}-DB-subnet-a"
+        - Fn::ImportValue: !Sub "${PJPrefix}-DB-subnet-c"
+
+# ------------------------------------------------------------#
+#  DBParameterGroup
+# ------------------------------------------------------------#
+  DBParameterGroup:
+    Type: "AWS::RDS::DBParameterGroup"
+    Properties:
+      Family: MySQL8.0
+      Description: !Sub "${PJPrefix}-${DBInstanceID}-parm"
+
+  DBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBInstanceIdentifier: !Ref DBInstanceID
+      DBName: !Ref DBName
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      EnableIAMDatabaseAuthentication: true
+      Engine: MySQL
+      EngineVersion: 8.0.23
+      MultiAZ: !Ref MultiAZ
+      AutoMinorVersionUpgrade: false
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      MonitoringInterval: 0
+      DBSubnetGroupName: !Ref RDSSubnetgroup
+      VPCSecurityGroups:
+        - Fn::ImportValue: !Sub "${PJPrefix}-DB-sg"
+
+Outputs:
+#DBInstance
+  DBInstanceID:
+    Value: !Ref DBInstance
+    Export:
+      Name: !Sub "${PJPrefix}-${DBInstanceID}-id"
+
+  DBInstanceEndpoint:
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Export:
+      Name: !Sub "${PJPrefix}-${DBInstanceID}-endpoint"
+
+  DBName:
+    Value: !Ref DBName
+    Export:
+      Name: !Sub "${PJPrefix}-${DBInstanceID}-dbname"

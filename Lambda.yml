@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: sample of cloudformation template for deploying a lambda function form S3
+Parameters:
+  PJPrefix:
+    Default: "test"
+    Type: String
+  FunctionName:
+    Description: "Lambda Function Name"
+    Default: "test-lambda-function"
+    Type: String
+   
+
+Resources:
+    LambdaFunction:
+      DependsOn: LambdaExecutionRole
+      Type: "AWS::Lambda::Function"
+      Properties:
+        Code:
+          S3Bucket: "atlus-templates"
+          S3Key: "testfunction.zip"
+        Description: test deploy lambda template
+        FunctionName: !Ref FunctionName
+        Handler: test.lambda_handler
+        Role: !GetAtt LambdaExecutionRole.Arn 
+        Runtime: python3.8 
+        VpcConfig:
+           SubnetIds:
+            - Fn::ImportValue: !Sub "${PJPrefix}-Lambda-subnet-a"
+            - Fn::ImportValue: !Sub "${PJPrefix}-Lambda-subnet-c"
+            - Fn::ImportValue: !Sub "${PJPrefix}-Lambda-subnet-d"
+           SecurityGroupIds:
+            - Fn::ImportValue: !Sub "${PJPrefix}-Lambda-sg"
+
+    LambdaExecutionRole: 
+      Type: AWS::IAM::Role
+      Properties: 
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement: 
+          - Effect: "Allow"
+            Principal: 
+              Service: 
+              - lambda.amazonaws.com
+            Action:  
+              - sts:AssumeRole
+          - Effect: "Allow"
+            Principal: 
+              Service: 
+              - ec2.amazonaws.com
+            Action:  
+              - sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+
+Outputs:
+  LambdaFunction:
+    Value: !Ref LambdaFunction
+    Export:
+      Name: !Ref FunctionName

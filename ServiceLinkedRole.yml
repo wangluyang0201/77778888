@@ -1,0 +1,9 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 
+  Service Linked Role for Amazon Elasticsearch Service
+
+Resources:
+  EsServiceLinkedRole:
+    Type: "AWS::IAM::ServiceLinkedRole"
+    Properties:
+      AWSServiceName: es.amazonaws.com

@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 
+  CloudFormation IAM user Create
+
+Resources:
+ myuser:
+  Type: AWS::IAM::User
+  Properties:
+    Path: "/"
+    UserName: cfnuser1
+    LoginProfile:
+      Password: Aws20210510
+    ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+      - arn:aws:iam::aws:policy/AmazonVPCFullAccess
+      - arn:aws:iam::aws:policy/AmazonRDSFullAccess
+      - arn:aws:iam::aws:policy/AWSLambda_FullAccess
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      
+    Policies:
+    - PolicyName: IAMroleCreateAttachpolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+            - iam:CreateRole
+            - iam:PutRolePolicy
+            - iam:CreateInstanceProfile
+            - iam:AddRoleToInstanceProfile
+            - iam:List*
+            - iam:Get*
+            - iam:AttachRolePolicy
+            - iam:PassRole
+            - iam:CreateServiceLinkedRole
+            - es:CreateElasticsearchDomain
+            - es:DescribeElasticsearchDomain
+          Resource:
+          - "*"
+        
